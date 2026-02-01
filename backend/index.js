@@ -292,9 +292,20 @@ const SCOPES = [
     'https://www.googleapis.com/auth/userinfo.profile'
 ];
 
+// Helper to find client_secret.json (Local vs Render)
+function getCredentialsPath() {
+    const localPath = path.join(process.cwd(), 'client_secret.json');
+    const secretPath = '/etc/secrets/client_secret.json';
+
+    if (fs.existsSync(localPath)) return localPath;
+    if (fs.existsSync(secretPath)) return secretPath;
+
+    return localPath; // Default to local path for error message
+}
+
 // 1. Generate Auth URL (for a generic 'add account' flow)
 app.get('/api/youtube/auth-url', (req, res) => {
-    const CREDENTIALS_PATH = path.join(process.cwd(), 'client_secret.json');
+    const CREDENTIALS_PATH = getCredentialsPath();
     if (!fs.existsSync(CREDENTIALS_PATH)) {
         return res.status(500).json({ error: 'client_secret.json missing' });
     }
@@ -316,7 +327,7 @@ app.get('/api/youtube/auth-url', (req, res) => {
 // 2. Handle Callback & Add Account
 app.post('/api/youtube/add-account', async (req, res) => {
     const { code } = req.body;
-    const CREDENTIALS_PATH = path.join(process.cwd(), 'client_secret.json');
+    const CREDENTIALS_PATH = getCredentialsPath();
     const content = fs.readFileSync(CREDENTIALS_PATH);
     const credentials = JSON.parse(content);
     const { client_secret, client_id } = credentials.installed || credentials.web;
@@ -394,7 +405,7 @@ app.post('/api/youtube/upload', async (req, res) => {
     }
 
     // Auth setup (same as before)
-    const CREDENTIALS_PATH = path.join(process.cwd(), 'client_secret.json');
+    const CREDENTIALS_PATH = getCredentialsPath();
     const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
     const { client_secret, client_id } = credentials.installed || credentials.web;
     const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, process.env.REDIRECT_URI || 'http://localhost:3000');
