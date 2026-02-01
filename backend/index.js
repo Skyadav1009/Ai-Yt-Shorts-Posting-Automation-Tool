@@ -303,7 +303,7 @@ app.get('/api/youtube/auth-url', (req, res) => {
     const credentials = JSON.parse(content);
     const { client_secret, client_id } = credentials.installed || credentials.web;
 
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, 'http://localhost:3000');
+    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, process.env.REDIRECT_URI || 'http://localhost:3000');
     const url = oAuth2Client.generateAuthUrl({
         access_type: 'offline', // Crucial for refresh tokens
         scope: SCOPES,
@@ -321,7 +321,7 @@ app.post('/api/youtube/add-account', async (req, res) => {
     const credentials = JSON.parse(content);
     const { client_secret, client_id } = credentials.installed || credentials.web;
 
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, 'http://localhost:3000');
+    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, process.env.REDIRECT_URI || 'http://localhost:3000');
 
     try {
         const { tokens } = await oAuth2Client.getToken(code);
@@ -397,7 +397,7 @@ app.post('/api/youtube/upload', async (req, res) => {
     const CREDENTIALS_PATH = path.join(process.cwd(), 'client_secret.json');
     const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
     const { client_secret, client_id } = credentials.installed || credentials.web;
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, 'http://localhost:3000');
+    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, process.env.REDIRECT_URI || 'http://localhost:3000');
 
     oAuth2Client.setCredentials(JSON.parse(fs.readFileSync(tokenPath)));
 
