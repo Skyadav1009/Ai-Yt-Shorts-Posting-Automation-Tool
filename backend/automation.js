@@ -8,6 +8,7 @@ import { spawn } from 'child_process';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 import 'dotenv/config';
+import * as auth from './auth.js';
 
 // Setup paths
 const __filename = fileURLToPath(import.meta.url);
@@ -297,54 +298,39 @@ async function uploadToYouTube(filePath, title, description, tags, niche) {
         throw new Error('No connected YouTube accounts found.');
     }
 
-    const tokenPath = path.join(TOKENS_DIR, `${targetAccountId}.json`);
-    if (!fs.existsSync(tokenPath)) throw new Error(`Token for account ${targetAccountId} not found`);
+    try {
+        // Use Centralized Auth (handles refresh tokens automatically)
+        const oAuth2Client = await auth.createAuthenticatedClient(targetAccountId);
 
-    // Credentials
-    // Looking for client_secret.json in current dir or root
-    let CREDENTIALS_PATH = path.join(__dirname, 'client_secret.json'); // backend/client_secret.json
-    if (!fs.existsSync(CREDENTIALS_PATH)) {
-        // Try parent dir
-        CREDENTIALS_PATH = path.join(__dirname, '../client_secret.json');
-        if (!fs.existsSync(CREDENTIALS_PATH)) throw new Error('client_secret.json not found');
+        // Upload
+        const youtube = google.youtube({ version: 'v3', auth: oAuth2Client });
+
+        const response = await youtube.videos.insert({
+            part: 'snippet,status',
+            requestBody: {
+                snippet: {
+                    title: title.substring(0, 100),
+                    description: description,
+                    tags: tags,
+                    categoryId: '22',
+                },
+                status: {
+                    privacyStatus: 'public',
+                    selfDeclaredMadeForKids: false,
+                },
+            },
+            media: {
+                body: fs.createReadStream(filePath),
+            },
+        });
+
+        console.log(`[Automation] Upload Success! Video ID: ${response.data.id}`);
+        return response.data;
+
+    } catch (error) {
+        console.error(`[Automation] Upload Failed for account ${targetAccountId}:`, error.message);
+        throw error;
     }
-
-    const content = fs.readFileSync(CREDENTIALS_PATH);
-    const credentials = JSON.parse(content);
-    const { client_secret, client_id } = credentials.installed || credentials.web;
-
-    const oAuth2Client = new google.auth.OAuth2(
-        client_id,
-        client_secret,
-        process.env.REDIRECT_URI || 'http://localhost:3000'
-    );
-
-    oAuth2Client.setCredentials(JSON.parse(fs.readFileSync(tokenPath)));
-
-    // Upload
-    const youtube = google.youtube({ version: 'v3', auth: oAuth2Client });
-
-    const response = await youtube.videos.insert({
-        part: 'snippet,status',
-        requestBody: {
-            snippet: {
-                title: title.substring(0, 100),
-                description: description,
-                tags: tags,
-                categoryId: '22',
-            },
-            status: {
-                privacyStatus: 'public', // Set to private/unlisted for testing if preferred
-                selfDeclaredMadeForKids: false,
-            },
-        },
-        media: {
-            body: fs.createReadStream(filePath),
-        },
-    });
-
-    console.log(`[Automation] Upload Success! Video ID: ${response.data.id}`);
-    return response.data;
 }
 
 

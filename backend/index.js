@@ -289,57 +289,36 @@ app.delete('/api/admin/accounts/:id', (req, res) => {
 // YOUTUBE MULTI-ACCOUNT UPLOAD
 // ============================================
 import { google } from 'googleapis';
-import open from 'open';
+import * as auth from './auth.js'; // Import centralized auth
 
 const SCOPES = [
     'https://www.googleapis.com/auth/youtube.upload',
-    'https://www.googleapis.com/auth/userinfo.email', // To identify user
+    'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile'
 ];
 
-// Helper to find client_secret.json (Local vs Render)
-function getCredentialsPath() {
-    const localPath = path.join(process.cwd(), 'client_secret.json');
-    const secretPath = '/etc/secrets/client_secret.json';
-
-    if (fs.existsSync(localPath)) return localPath;
-    if (fs.existsSync(secretPath)) return secretPath;
-
-    return localPath; // Default to local path for error message
-}
-
-// 1. Generate Auth URL (for a generic 'add account' flow)
+// 1. Generate Auth URL
 app.get('/api/youtube/auth-url', (req, res) => {
-    const CREDENTIALS_PATH = getCredentialsPath();
-    if (!fs.existsSync(CREDENTIALS_PATH)) {
-        return res.status(500).json({ error: 'client_secret.json missing' });
+    try {
+        const oAuth2Client = auth.getOAuthClient();
+        const url = oAuth2Client.generateAuthUrl({
+            access_type: 'offline', // Crucial: Asks for refresh token
+            scope: SCOPES,
+            prompt: 'consent' // Force: Ensures we get a refresh token every time
+        });
+        res.json({ url });
+    } catch (error) {
+        console.error('Auth URL Error:', error);
+        res.status(500).json({ error: error.message });
     }
-
-    const content = fs.readFileSync(CREDENTIALS_PATH);
-    const credentials = JSON.parse(content);
-    const { client_secret, client_id } = credentials.installed || credentials.web;
-
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, process.env.REDIRECT_URI || 'http://localhost:3000');
-    const url = oAuth2Client.generateAuthUrl({
-        access_type: 'offline', // Crucial for refresh tokens
-        scope: SCOPES,
-        prompt: 'consent' // Force refresh token generation
-    });
-
-    res.json({ url });
 });
 
 // 2. Handle Callback & Add Account
 app.post('/api/youtube/add-account', async (req, res) => {
     const { code } = req.body;
-    const CREDENTIALS_PATH = getCredentialsPath();
-    const content = fs.readFileSync(CREDENTIALS_PATH);
-    const credentials = JSON.parse(content);
-    const { client_secret, client_id } = credentials.installed || credentials.web;
-
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, process.env.REDIRECT_URI || 'http://localhost:3000');
 
     try {
+        const oAuth2Client = auth.getOAuthClient();
         const { tokens } = await oAuth2Client.getToken(code);
         oAuth2Client.setCredentials(tokens);
 
@@ -352,8 +331,8 @@ app.post('/api/youtube/add-account', async (req, res) => {
         const { data: userInfo } = await oauth2.userinfo.get();
         const accountId = userInfo.id; // Google User ID
 
-        // Save Tokens
-        fs.writeFileSync(path.join(TOKENS_DIR, `${accountId}.json`), JSON.stringify(tokens));
+        // Save Tokens using new Auth module
+        auth.saveTokens(accountId, tokens);
 
         // Update DB
         const db = getDb();
@@ -384,7 +363,7 @@ app.post('/api/youtube/add-account', async (req, res) => {
 
 // 3. Upload to Specific Account
 app.post('/api/youtube/upload', async (req, res) => {
-    const { videoUrl, title, description, tags, niche } = req.body; // Niche comes from frontend
+    const { videoUrl, title, description, tags, niche } = req.body;
 
     if (!videoUrl || !title) return res.status(400).json({ error: 'Video URL/Title required' });
 
@@ -403,27 +382,13 @@ app.post('/api/youtube/upload', async (req, res) => {
         return res.status(500).json({ error: 'No YouTube accounts connected. Please connect one in the Dashboard.' });
     }
 
-    // Load Tokens
-    const tokenPath = path.join(TOKENS_DIR, `${targetAccountId}.json`);
-    if (!fs.existsSync(tokenPath)) {
-        return res.status(500).json({ error: 'Credentials for target account not found. Try reconnecting.' });
-    }
-
-    // Auth setup (same as before)
-    const CREDENTIALS_PATH = getCredentialsPath();
-    const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
-    const { client_secret, client_id } = credentials.installed || credentials.web;
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, process.env.REDIRECT_URI || 'http://localhost:3000');
-
-    oAuth2Client.setCredentials(JSON.parse(fs.readFileSync(tokenPath)));
-
     try {
-        // Check validity/refresh if needed handled by google-auth-library automatically usually, 
-        // but explicit check is safer if using outdated tokens.
-        // For now relying on auto-refresh via access_type=offline
+        // Use Centralized Auth to get Client (Auto-Refreshes!)
+        const oAuth2Client = await auth.createAuthenticatedClient(targetAccountId);
 
         const videoFilename = videoUrl.split('/').pop();
         const videoPath = path.join(outputDir, videoFilename);
+
         const youtube = google.youtube({ version: 'v3', auth: oAuth2Client });
 
         console.log(`Uploading to account ${targetAccountId}...`);
