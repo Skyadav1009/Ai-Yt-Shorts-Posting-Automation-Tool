@@ -223,6 +223,8 @@ function formatSRTTime(seconds) {
 // ============================================
 // ADMIN DASHBOARD & ACCOUNT MANAGEMENT
 // ============================================
+import jwt from 'jsonwebtoken';
+
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
@@ -246,25 +248,41 @@ function saveDb(data) {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
 
+// Authentication Middleware
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    if (token == null) return res.sendStatus(401);
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+}
+
 // Admin Login
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
     // Hardcoded as requested
     if (username === 'shivam' && password === '2K23CSUN01049') {
-        res.json({ success: true, token: 'admin-session-token' });
+        const user = { name: username, role: 'admin' };
+        const accessToken = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '24h' });
+        res.json({ success: true, token: accessToken });
     } else {
         res.status(401).json({ error: 'Invalid credentials' });
     }
 });
 
-// List Accounts
-app.get('/api/admin/accounts', (req, res) => {
+// List Accounts (Protected)
+app.get('/api/admin/accounts', authenticateToken, (req, res) => {
     const db = getDb();
     res.json(db);
 });
 
-// Update Mappings
-app.post('/api/admin/mappings', (req, res) => {
+// Update Mappings (Protected)
+app.post('/api/admin/mappings', authenticateToken, (req, res) => {
     const { mappings } = req.body;
     const db = getDb();
     db.mappings = mappings;
@@ -272,8 +290,8 @@ app.post('/api/admin/mappings', (req, res) => {
     res.json({ success: true });
 });
 
-// Delete Account
-app.delete('/api/admin/accounts/:id', (req, res) => {
+// Delete Account (Protected)
+app.delete('/api/admin/accounts/:id', authenticateToken, (req, res) => {
     const { id } = req.params;
     const db = getDb();
     db.accounts = db.accounts.filter(acc => acc.id !== id);

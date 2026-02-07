@@ -23,8 +23,20 @@ export const Dashboard: React.FC = () => {
     }, []);
 
     const fetchData = async () => {
+        const token = localStorage.getItem('adminToken');
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+
         try {
-            const res = await fetch(`${BACKEND_URL}/api/admin/accounts`);
+            const res = await fetch(`${BACKEND_URL}/api/admin/accounts`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.status === 401 || res.status === 403) {
+                navigate('/login');
+                return;
+            }
             const data = await res.json();
             setAccounts(data.accounts || []);
             setMappings(data.mappings || {});
@@ -66,8 +78,12 @@ export const Dashboard: React.FC = () => {
 
     const handleDeleteAccount = async (id: string) => {
         if (!confirm('Are you sure you want to remove this account?')) return;
+        const token = localStorage.getItem('adminToken');
         try {
-            const res = await fetch(`${BACKEND_URL}/api/admin/accounts/${id}`, { method: 'DELETE' });
+            const res = await fetch(`${BACKEND_URL}/api/admin/accounts/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) fetchData();
         } catch (err) {
             console.error(err);
@@ -78,10 +94,14 @@ export const Dashboard: React.FC = () => {
         if (!newNiche || !selectedAccount) return;
 
         const updatedMappings = { ...mappings, [newNiche]: selectedAccount };
+        const token = localStorage.getItem('adminToken');
         try {
             const res = await fetch(`${BACKEND_URL}/api/admin/mappings`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ mappings: updatedMappings })
             });
             if (res.ok) {
@@ -96,10 +116,14 @@ export const Dashboard: React.FC = () => {
     const handleDeleteMapping = async (niche: string) => {
         const updated = { ...mappings };
         delete updated[niche];
+        const token = localStorage.getItem('adminToken');
         try {
             await fetch(`${BACKEND_URL}/api/admin/mappings`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ mappings: updated })
             });
             setMappings(updated);

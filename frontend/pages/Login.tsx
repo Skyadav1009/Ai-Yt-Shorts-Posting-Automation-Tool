@@ -19,6 +19,8 @@ export const Login: React.FC = () => {
             });
 
             if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('adminToken', data.token);
                 navigate('/dashboard');
             } else {
                 setError('Invalid credentials');
