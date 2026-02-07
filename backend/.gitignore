@@ -19,11 +19,11 @@ dist-ssr
 .env.production
 .env.local
 client_secret.json
-server/tokens.json
-
 # Generated Content
-server/output/*
-!server/output/.gitkeep
+output/*
+!output/.gitkeep
+data/tokens/*
+data/db.json
 
 # Editor directories and files
 .vscode/*
